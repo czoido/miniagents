@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  smoke-test:
+  experiments:
     runs-on: macos-15
     timeout-minutes: 30
 
