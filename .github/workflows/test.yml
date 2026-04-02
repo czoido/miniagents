@@ -9,7 +9,7 @@ on:
 jobs:
   smoke-test:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -18,11 +18,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Cache pip
+      - name: Cache venv
+        id: cache-venv
         uses: actions/cache@v4
         with:
-          path: ~/Library/Caches/pip
-          key: pip-${{ hashFiles('requirements.txt') }}
+          path: .venv-ci
+          key: venv-${{ runner.os }}-3.12-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv-ci
+          .venv-ci/bin/pip install -v -r requirements.txt
 
       - name: Cache HF model
         uses: actions/cache@v4
@@ -30,12 +37,9 @@ jobs:
           path: ~/.cache/huggingface/hub
           key: hf-bonsai-1.7b
 
-      - name: Install dependencies
-        run: pip install -v -r requirements.txt
-
       - name: Run debate (1 round, 1.7b)
         run: >
-          python -m experiments.01_debate.run
+          .venv-ci/bin/python -m experiments.01_debate.run
           "Is Python a good language?"
           --model 1.7b
           --rounds 1
