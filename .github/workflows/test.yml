@@ -1,0 +1,43 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Cache HF model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-bonsai-1.7b
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run debate (1 round, 1.7b)
+        run: >
+          python -m experiments.01_debate.run
+          "Is Python a good language?"
+          --model 1.7b
+          --rounds 1
+          --max-tokens 50
+          --max-tokens-judge 50
