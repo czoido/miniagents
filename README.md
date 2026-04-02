@@ -67,6 +67,27 @@ python -m experiments.02_hn_digest.run --stories 3 --model 1.7b
 | `--model` | `4b` | Model size |
 | `--max-article-chars` | `3000` | Max chars extracted per article |
 
+### 03 — Exquisite Corpse
+
+Surrealist collaborative storytelling. Multiple agents with distinct voices
+(poet, noir, sci-fi, absurdist) take turns writing, but each only sees the
+last few sentences from the previous turn. Less overlap = more surreal.
+
+```bash
+python -m experiments.03_exquisite_corpse.run
+python -m experiments.03_exquisite_corpse.run --seed "The door opened slowly"
+python -m experiments.03_exquisite_corpse.run --turns 10 --overlap 1
+python -m experiments.03_exquisite_corpse.run --overlap 1 --model 8b
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--seed` | random | Opening sentence |
+| `--turns` | `6` | Number of turns |
+| `--overlap` | `2` | Sentences visible to next agent |
+| `--model` | `4b` | Model size |
+| `--max-tokens` | `150` | Tokens per turn |
+
 ## Adding experiments
 
 ```

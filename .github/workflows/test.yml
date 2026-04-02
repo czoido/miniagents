@@ -71,3 +71,9 @@ jobs:
         run: >
           .venv-ci/bin/python -m experiments.02_hn_digest.run
           --model ${{ matrix.model }}
+
+      - name: Run exquisite corpse (${{ matrix.model }})
+        run: >
+          .venv-ci/bin/python -m experiments.03_exquisite_corpse.run
+          --turns 4
+          --model ${{ matrix.model }}
