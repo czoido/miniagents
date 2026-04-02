@@ -31,7 +31,7 @@ jobs:
           key: hf-bonsai-1.7b
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -v -r requirements.txt
 
       - name: Run debate (1 round, 1.7b)
         run: >
