@@ -46,6 +46,3 @@ jobs:
           .venv-ci/bin/python -m experiments.01_debate.run
           "Is Python a good language?"
           --model 1.7b
-          --rounds 1
-          --max-tokens 50
-          --max-tokens-judge 50
