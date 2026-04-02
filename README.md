@@ -50,16 +50,33 @@ python -m experiments.01_debate.run --interactive
 | `--max-tokens-judge` | `400` | Tokens for verdict |
 | `--interactive` | off | Loop over topics |
 
+### 02 — HN Digest
+
+Fetches top Hacker News stories, extracts article content, summarizes each
+with a dedicated agent, and a curator produces a ranked digest.
+
+```bash
+python -m experiments.02_hn_digest.run
+python -m experiments.02_hn_digest.run --stories 10
+python -m experiments.02_hn_digest.run --stories 3 --model 1.7b
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--stories` | `5` | Stories to process |
+| `--model` | `4b` | Model size |
+| `--max-article-chars` | `3000` | Max chars extracted per article |
+
 ## Adding experiments
 
 ```
-experiments/02_name/
+experiments/NN_name/
 ├── __init__.py
 └── run.py          # from shared.models import MODELS, load_model
 ```
 
 ```bash
-python -m experiments.02_name.run
+python -m experiments.NN_name.run
 ```
 
 ## Links

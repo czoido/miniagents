@@ -14,6 +14,9 @@ jobs:
   experiments:
     runs-on: macos-15
     timeout-minutes: 30
+    strategy:
+      matrix:
+        model: ["1.7b", "4b", "8b"]
 
     steps:
       - uses: actions/checkout@v4
@@ -35,14 +38,19 @@ jobs:
           python -m venv .venv-ci
           .venv-ci/bin/pip install -v -r requirements.txt
 
-      - name: Cache HF model
+      - name: Cache HF model (${{ matrix.model }})
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
-          key: hf-bonsai-1.7b
+          key: hf-bonsai-${{ matrix.model }}
 
-      - name: Run debate (1 round, 1.7b)
+      - name: Run debate (${{ matrix.model }})
         run: >
           .venv-ci/bin/python -m experiments.01_debate.run
           "Is Python a good language?"
-          --model 1.7b
+          --model ${{ matrix.model }}
+
+      - name: Run HN digest (${{ matrix.model }})
+        run: >
+          .venv-ci/bin/python -m experiments.02_hn_digest.run
+          --model ${{ matrix.model }}

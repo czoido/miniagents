@@ -2,4 +2,5 @@ mlx-lm
 huggingface-hub
 smolagents
 pyyaml
+httpx
 mlx @ git+https://github.com/PrismML-Eng/mlx.git@prism
