@@ -11,13 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  experiments:
+  setup:
     runs-on: macos-15
     timeout-minutes: 30
-    strategy:
-      matrix:
-        model: ["1.7b", "4b", "8b"]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +33,27 @@ jobs:
         run: |
           python -m venv .venv-ci
           .venv-ci/bin/pip install -v -r requirements.txt
+
+  experiments:
+    needs: setup
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        model: ["1.7b", "4b", "8b"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore venv
+        uses: actions/cache@v4
+        with:
+          path: .venv-ci
+          key: venv-${{ runner.os }}-3.12-${{ hashFiles('requirements.txt') }}
 
       - name: Cache HF model (${{ matrix.model }})
         uses: actions/cache@v4
