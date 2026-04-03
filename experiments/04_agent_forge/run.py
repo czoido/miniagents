@@ -466,7 +466,7 @@ def main():
         help="directory with agent .md definitions (default: agents/)",
     )
     parser.add_argument(
-        "--model", choices=MODELS, default="8b",
+        "--model", default="8b",
         help="model size for coordinator (default: 8b)",
     )
     parser.add_argument(

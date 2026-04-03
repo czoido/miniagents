@@ -228,15 +228,13 @@ def main():
     )
     parser.add_argument(
         "--model",
-        choices=MODELS,
         default="8b",
-        help="model size for debaters (default: 8b)",
+        help=f"model key ({', '.join(MODELS)}) or HuggingFace ID (default: 8b)",
     )
     parser.add_argument(
         "--judge-model",
-        choices=MODELS,
         default=None,
-        help="model size for judge (defaults to --model)",
+        help="model for judge (defaults to --model)",
     )
     parser.add_argument("--max-tokens", type=int, default=200)
     parser.add_argument("--max-tokens-judge", type=int, default=400)

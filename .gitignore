@@ -6,3 +6,4 @@ __pycache__/
 dist/
 build/
 .DS_Store
+experiments/05_mini_city/logs/

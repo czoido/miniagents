@@ -315,7 +315,7 @@ def main():
         help="sentences visible to next agent (default: 2)",
     )
     parser.add_argument(
-        "--model", choices=MODELS, default="8b",
+        "--model", default="8b",
         help="model size (default: 8b)",
     )
     parser.add_argument("--max-tokens", type=int, default=150)

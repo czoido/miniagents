@@ -274,7 +274,7 @@ def main():
         help="number of stories to process (default: 5)",
     )
     parser.add_argument(
-        "--model", choices=MODELS, default="8b",
+        "--model", default="8b",
         help="model size (default: 8b)",
     )
     parser.add_argument(

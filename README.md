@@ -136,6 +136,45 @@ You are a poet. Write vivid, metaphorical prose...
 | `max_tokens` | `300` | Max generation tokens |
 | `max_sources` | `3` | Max pages to fetch (web_researcher only) |
 
+### 05 — Mini City
+
+A village simulation with an economy. Citizens have money, daily income from
+their jobs, and concrete goals that often require buying things. Old Tomás's
+General Store sells anything for a price. At the end of each day, citizens
+decide whether to work (earn money) or visit the store (spend money to advance
+their goals). Random events inject fresh situations each morning.
+
+Pairs meet and have multi-turn conversations — they talk until they naturally
+say goodbye or hit a turn limit. Between days, citizens "sleep": memories get
+compressed and goals refresh. A factual narrator summarizes each day.
+
+| Citizen | Role | Starting $ | Income/day |
+|---------|------|-----------|------------|
+| Rosa | Baker | $150 | $40 |
+| Viktor | Doctor | $250 | $50 |
+| Luna | Artist | $40 | $0 |
+| Marco | Mayor | $400 | $0 |
+| Sombra | Drifter | $20 | $15 |
+| Elena | Teacher | $120 | $30 |
+
+```bash
+python -m experiments.05_mini_city.run
+python -m experiments.05_mini_city.run --days 3 --hours 6     # 3-day sim
+python -m experiments.05_mini_city.run --citizens 8 --days 3  # 8 generated citizens
+python -m experiments.05_mini_city.run --days 7 --hours 4     # week, lighter
+python -m experiments.05_mini_city.run --hours 10 --model 8b  # full single day
+python -m experiments.05_mini_city.run --seed 42
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--citizens` | 6 preset | Generate N random citizens instead of defaults |
+| `--days` | `1` | Days to simulate |
+| `--hours` | `6` | Time slots per day (max 10 = 7AM–11:30PM) |
+| `--model` | `8b` | Model size |
+| `--max-tokens` | `150` | Tokens per generation turn |
+| `--seed` | random | RNG seed for reproducibility |
+
 ## Adding experiments
 
 ```
