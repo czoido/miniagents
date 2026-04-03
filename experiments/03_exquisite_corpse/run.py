@@ -28,7 +28,16 @@ import time
 from dataclasses import dataclass
 
 from mlx_lm.sample_utils import make_sampler
+from rich.panel import Panel
+from rich.text import Text
 
+from shared.console import (
+    agent_tag,
+    banner,
+    console,
+    result_panel,
+    stats_footer,
+)
 from shared.models import MODELS, load_model
 
 # ---------------------------------------------------------------------------
@@ -62,7 +71,7 @@ _STORY_RULES = (
 VOICES = [
     {
         "name": "Poet",
-        "tag": "\033[35m● Poet\033[0m",
+        "style": "magenta",
         "system": (
             f"{_STORY_RULES}\n"
             "YOUR VOICE: lyrical and metaphorical, but always in service of the narrative."
@@ -71,7 +80,7 @@ VOICES = [
     },
     {
         "name": "Noir",
-        "tag": "\033[90m● Noir\033[0m",
+        "style": "bright_black",
         "system": (
             f"{_STORY_RULES}\n"
             "YOUR VOICE: hard-boiled noir. Short punchy sentences. Cynical tone."
@@ -80,7 +89,7 @@ VOICES = [
     },
     {
         "name": "Sci-Fi",
-        "tag": "\033[36m● Sci-Fi\033[0m",
+        "style": "cyan",
         "system": (
             f"{_STORY_RULES}\n"
             "YOUR VOICE: speculative sci-fi. Technical details grounded in the scene."
@@ -89,7 +98,7 @@ VOICES = [
     },
     {
         "name": "Absurdist",
-        "tag": "\033[33m● Absurdist\033[0m",
+        "style": "yellow",
         "system": (
             f"{_STORY_RULES}\n"
             "YOUR VOICE: surreal and unexpected, but your twist must connect to the story."
@@ -108,8 +117,6 @@ DEFAULT_SEEDS = [
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-W = 64
 
 
 def _msg(role: str, text: str) -> dict:
@@ -140,12 +147,6 @@ def _generate(model, system: str, user_msg: str, temp: float, max_tokens: int) -
     return (response.content or "").strip(), elapsed
 
 
-def _print_wrapped(text: str, indent: int = 4):
-    prefix = " " * indent
-    for line in text.splitlines():
-        print(textwrap.fill(line, width=W, initial_indent=prefix, subsequent_indent=prefix))
-
-
 # ---------------------------------------------------------------------------
 # Game
 # ---------------------------------------------------------------------------
@@ -167,10 +168,10 @@ def run_exquisite_corpse(
     fragments: list[Fragment] = []
     t_start = time.perf_counter()
 
-    print(f"\n{'═' * W}")
-    print(f"  EXQUISITE CORPSE — {turns} turns, {overlap}-sentence overlap")
-    print(f"{'═' * W}")
-    print(f"\n  \033[1mSeed:\033[0m \"{seed}\"\n")
+    banner(
+        f"EXQUISITE CORPSE — {turns} turns, {overlap}-sentence overlap",
+        subtitle=f'Seed: "{seed}"',
+    )
 
     previous_text = seed
 
@@ -200,12 +201,19 @@ def run_exquisite_corpse(
             elapsed_s=elapsed,
         ))
 
-        print(f"{'─' * W}")
-        print(f"  Turn {i + 1}/{turns}  {voice['tag']}  ({elapsed:.1f}s)")
-        print(f"  saw: \"{visible}\"")
-        print()
-        _print_wrapped(text)
-        print()
+        tag = agent_tag(voice["name"], voice["style"])
+        tag.append(f"  ({elapsed:.1f}s)", style="dim")
+        subtitle_text = Text()
+        subtitle_text.append("saw: ", style="dim")
+        subtitle_text.append(f'"{visible}"', style="dim italic")
+
+        console.print(Panel(
+            text.strip(),
+            title=Text.assemble("  Turn ", f"{i + 1}/{turns}  ", tag, "  "),
+            subtitle=subtitle_text,
+            expand=True,
+            padding=(1, 2),
+        ))
 
         if text:
             previous_text = text
@@ -217,15 +225,10 @@ def run_exquisite_corpse(
             parts.append(f.wrote)
     full = "\n\n".join(parts)
 
-    print(f"{'═' * W}")
-    print(f"  FULL STORY")
-    print(f"{'═' * W}\n")
-    _print_wrapped(full)
+    result_panel(full, title="FULL STORY")
 
     # -- critic: evaluate --------------------------------------------
-    print(f"\n{'═' * W}")
-    print(f"  \033[32m● Critic\033[0m — evaluating …")
-    print(f"{'═' * W}\n")
+    banner("Critic — evaluating …")
 
     eval_system = (
         "You are a literary critic. You receive a short story written "
@@ -245,13 +248,16 @@ def run_exquisite_corpse(
         temp=0.4, max_tokens=300,
     )
 
-    _print_wrapped(evaluation)
-    print(f"\n  \033[32m● Critic\033[0m  ({eval_elapsed:.1f}s)")
+    console.print(Panel(
+        evaluation.strip(),
+        title="[green]Critic[/green]",
+        subtitle=f"[dim]{eval_elapsed:.1f}s[/dim]",
+        expand=True,
+        padding=(1, 2),
+    ))
 
     # -- translator --------------------------------------------------
-    print(f"\n{'═' * W}")
-    print(f"  \033[34m● Translator\033[0m — translating to Spanish …")
-    print(f"{'═' * W}\n")
+    banner("Translator — translating to Spanish …")
 
     trans_system = (
         "You are a literary translator. Translate the following English "
@@ -265,15 +271,21 @@ def run_exquisite_corpse(
         temp=0.3, max_tokens=1200,
     )
 
-    _print_wrapped(translation)
-    print(f"\n  \033[34m● Translator\033[0m  ({trans_elapsed:.1f}s)")
+    console.print(Panel(
+        translation.strip(),
+        title="[blue]Traducción[/blue]",
+        subtitle=f"[dim]{trans_elapsed:.1f}s[/dim]",
+        expand=True,
+        padding=(1, 2),
+    ))
 
     total = time.perf_counter() - t_start
-    print(f"\n{'─' * W}")
     voices_used = " → ".join(f.voice for f in fragments)
-    print(f"  {voices_used} → Critic → Translator")
-    print(f"  {turns} turns  ·  {overlap}-sentence overlap  ·  total {total:.1f}s")
-    print(f"{'═' * W}\n")
+
+    stats_footer(
+        f"{voices_used} → Critic → Translator\n"
+        f"  {turns} turns  ·  {overlap}-sentence overlap  ·  total {total:.1f}s"
+    )
 
     return fragments, full, evaluation, translation
 

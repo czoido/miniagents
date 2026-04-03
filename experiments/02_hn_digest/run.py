@@ -27,7 +27,16 @@ from urllib.parse import urlparse
 
 import httpx
 from mlx_lm.sample_utils import make_sampler
+from rich.panel import Panel
+from rich.table import Table
 
+from shared.console import (
+    banner,
+    console,
+    print_turn,
+    section,
+    stats_footer,
+)
 from shared.models import MODELS, load_model
 
 # ---------------------------------------------------------------------------
@@ -35,7 +44,6 @@ from shared.models import MODELS, load_model
 # ---------------------------------------------------------------------------
 
 HN_API = "https://hacker-news.firebaseio.com/v0"
-W = 64
 
 # ---------------------------------------------------------------------------
 # Data
@@ -61,7 +69,7 @@ class StoryWithSummary:
 
 
 # ---------------------------------------------------------------------------
-# Fetching (plain Python — no agent needed for HTTP plumbing)
+# Fetching
 # ---------------------------------------------------------------------------
 
 
@@ -192,17 +200,6 @@ def curate(model, summaries: list[StoryWithSummary]) -> tuple[str, float]:
 
 
 # ---------------------------------------------------------------------------
-# Display
-# ---------------------------------------------------------------------------
-
-
-def _print_wrapped(text: str, indent: int = 4):
-    prefix = " " * indent
-    for line in text.splitlines():
-        print(textwrap.fill(line, width=W, initial_indent=prefix, subsequent_indent=prefix))
-
-
-# ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
@@ -210,47 +207,48 @@ def _print_wrapped(text: str, indent: int = 4):
 def run_digest(model, stories_count: int = 5, max_article_chars: int = 3000):
     t_start = time.perf_counter()
 
-    print(f"\n{'═' * W}")
-    print(f"  HN DIGEST — top {stories_count}")
-    print(f"{'═' * W}")
+    banner(f"HN DIGEST — top {stories_count}")
 
-    # -- fetch -------------------------------------------------------
-    print(f"\n  Fetching from Hacker News...")
+    console.print()
+    console.print("  Fetching from Hacker News …", style="dim")
     stories = fetch_top_stories(stories_count)
-    print(f"  {len(stories)} stories.\n")
+    console.print(f"  {len(stories)} stories.", style="green")
+    console.print()
 
+    table = Table(show_header=False, box=None, padding=(0, 1), pad_edge=False)
+    table.add_column("#", style="dim", width=4, justify="right")
+    table.add_column("Title", no_wrap=False)
+    table.add_column("Stats", style="dim", width=16, justify="right")
     for i, s in enumerate(stories, 1):
-        domain = f" ({urlparse(s.url).netloc})" if s.url else ""
-        print(f"  {i:2d}. {s.title}{domain}")
-        print(f"      ▲ {s.score}  💬 {s.comments}")
+        domain = f" [dim]({urlparse(s.url).netloc})[/dim]" if s.url else ""
+        table.add_row(str(i), f"{s.title}{domain}", f"▲ {s.score}  💬 {s.comments}")
+    console.print(table)
 
     # -- summarize ---------------------------------------------------
-    print(f"\n{'─' * W}")
-    print(f"  Summarizing...")
-    print(f"{'─' * W}")
+    section("Summarizing")
 
     summaries = []
     for story in stories:
         result = summarize_story(model, story, max_article_chars)
         summaries.append(result)
         chars = f"{result.content_len} chars" if result.content_len > len(story.title) else "title only"
-        print(f"\n  \033[36m● {result.story.title}\033[0m")
-        print(f"    [{chars}, {result.elapsed_s:.1f}s]\n")
-        _print_wrapped(result.summary)
+        console.print()
+        console.print(Panel(
+            result.summary.strip(),
+            title=f"[cyan]{result.story.title}[/cyan]",
+            subtitle=f"[dim]{chars}, {result.elapsed_s:.1f}s[/dim]",
+            expand=True,
+            padding=(1, 2),
+        ))
 
     # -- curate ------------------------------------------------------
-    print(f"\n{'═' * W}")
-    print(f"  DIGEST")
-    print(f"{'═' * W}")
+    banner("DIGEST")
 
     digest, c_elapsed = curate(model, summaries)
-    print(f"\n  \033[33m◆ Curator\033[0m  ({c_elapsed:.1f}s)\n")
-    _print_wrapped(digest)
+    print_turn("Curator", "yellow", digest, c_elapsed, icon="◆")
 
     total = time.perf_counter() - t_start
-    print(f"\n{'─' * W}")
-    print(f"  {len(summaries)} stories  ·  total {total:.1f}s")
-    print(f"{'═' * W}\n")
+    stats_footer(f"{len(summaries)} stories  ·  total {total:.1f}s")
 
     return summaries, digest
 

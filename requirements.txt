@@ -6,4 +6,5 @@ httpx
 ddgs
 markdownify
 requests
+rich
 mlx @ git+https://github.com/PrismML-Eng/mlx.git@prism

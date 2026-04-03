@@ -45,16 +45,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from rich.prompt import Prompt
+from rich.table import Table
 from smolagents import CodeAgent, MLXModel
 
+from shared.console import (
+    banner,
+    code_panel,
+    console,
+    print_agent_done,
+    print_agent_start,
+    print_search_step,
+    result_panel,
+    section,
+)
 from shared.models import MODELS
 
 # ---------------------------------------------------------------------------
 # Data
 # ---------------------------------------------------------------------------
-
-W = 64
-
 
 AGENT_TYPES = {"text", "web_researcher"}
 
@@ -133,20 +142,23 @@ class ApprovingExecutor:
 
     def __call__(self, code_action, *args, **kwargs):
         if not self.auto_approve:
-            print(f"\n{'─' * W}")
-            print(f"  \033[33m⚠  The agent wants to execute:\033[0m\n")
-            for line in code_action.splitlines():
-                print(f"    \033[36m{line}\033[0m")
-            print(f"\n{'─' * W}")
+            section("Approval required")
+            console.print()
+            code_panel(code_action)
+            console.print()
 
             while True:
-                answer = input("  Approve? [y]es / [n]o / [q]uit: ").strip().lower()
-                if answer in ("y", "yes", ""):
+                answer = Prompt.ask(
+                    "  Approve?",
+                    choices=["y", "n", "q"],
+                    default="y",
+                )
+                if answer == "y":
                     break
-                if answer in ("n", "no"):
+                if answer == "n":
                     raise RuntimeError("Denied by user. Try a different approach.")
-                if answer in ("q", "quit"):
-                    print("\n  Aborted.")
+                if answer == "q":
+                    console.print("\n  Aborted.", style="dim")
                     sys.exit(0)
 
         return self._executor(code_action, *args, **kwargs)
@@ -178,12 +190,14 @@ class DirectTextAgent:
         self._max_tokens = agent_def.max_tokens
 
     def __call__(self, task: str, **kwargs) -> str:
+        print_agent_start(self.name, task, style="cyan")
         messages = [
             {"role": "system", "content": [{"type": "text", "text": self._instructions}]},
             {"role": "user", "content": [{"type": "text", "text": task}]},
         ]
         response = self.model(messages, max_tokens=self._max_tokens)
         text = response.content
+        print_agent_done(self.name, text, style="cyan")
         return (
             f"Here is the final answer from your managed agent '{self.name}':\n"
             f"{text}"
@@ -242,7 +256,10 @@ class WebResearchAgent:
                 if result and len(result.strip()) > 20 and self._extract_urls(result):
                     return result
                 if attempt < max_retries - 1:
-                    print(f"    \033[35m🔍 {self.name}\033[0m retry {attempt + 1}/{max_retries} (empty results)...")
+                    print_search_step(
+                        self.name,
+                        f"retry {attempt + 1}/{max_retries} (empty results)",
+                    )
                     time.sleep(1)
             except Exception as e:
                 if attempt == max_retries - 1:
@@ -252,7 +269,8 @@ class WebResearchAgent:
 
     def __call__(self, task: str, **kwargs) -> str:
         self._ensure_tools()
-        print(f"    \033[35m🔍 {self.name}\033[0m searching: {task[:80]}...")
+        print_agent_start(self.name, task, style="magenta")
+        print_search_step(self.name, f"searching: {task[:80]}…")
 
         search_result = self._search_with_retry(task)
 
@@ -261,14 +279,14 @@ class WebResearchAgent:
         max_chars_per_page = 2000
 
         for url in urls[: self._max_sources]:
-            print(f"    \033[35m🔍 {self.name}\033[0m fetching: {url[:60]}...")
+            print_search_step(self.name, f"fetching: {url[:60]}…")
             try:
                 content = self._visit(url)
                 page_excerpts.append(
                     f"### Source: {url}\n{content[:max_chars_per_page]}"
                 )
             except Exception as e:
-                print(f"    \033[35m🔍 {self.name}\033[0m \033[31mfetch failed:\033[0m {e}")
+                print_search_step(self.name, f"fetch failed: {e}", error=True)
                 continue
 
         context_parts = [f"## Search results\n{search_result}"]
@@ -290,6 +308,10 @@ class WebResearchAgent:
         ]
         response = self.model(messages, max_tokens=self._max_tokens)
         text = response.content
+        print_agent_done(
+            self.name, text, style="magenta",
+            extra=f"{len(urls)} sources, {len(page_excerpts)} fetched",
+        )
         return (
             f"Here is the final answer from your managed agent '{self.name}':\n"
             f"{text}"
@@ -307,9 +329,10 @@ def _load_models(defs: list[AgentDef], coordinator_model_size: str) -> dict[str,
     models: dict[str, MLXModel] = {}
     for size in sorted(sizes):
         model_id = MODELS[size]
-        print(f"  Loading {model_id} ...")
+        console.print(f"  Loading [bold]{model_id}[/bold] …")
         models[size] = MLXModel(model_id)
-    print(f"  Ready.\n")
+    console.print("  Ready.", style="green")
+    console.print()
     return models
 
 
@@ -338,49 +361,61 @@ def run_forge(
 ):
     defs = load_agent_defs(agents_dir)
     if not defs:
-        print("  No agent definitions found in", agents_dir)
+        console.print("  No agent definitions found in", agents_dir, style="red")
         return
 
-    print(f"\n{'═' * W}")
-    print(f"  AGENT FORGE — {len(defs)} agents discovered")
-    print(f"{'═' * W}\n")
+    banner(f"AGENT FORGE — {len(defs)} agents discovered")
 
+    table = Table(show_header=False, box=None, padding=(0, 1), pad_edge=False)
+    table.add_column("Icon", width=2)
+    table.add_column("Name", style="cyan", width=18)
+    table.add_column("Description")
+    table.add_column("Model", style="dim", width=6, justify="right")
     for d in defs:
-        model_tag = f" [{d.model}]" if d.model != model_size else ""
-        print(f"    \033[36m●\033[0m {d.name:<18} {d.description}{model_tag}")
-    print(f"\n  \033[1mTask:\033[0m \"{task}\"")
+        model_tag = d.model if d.model != model_size else ""
+        table.add_row("●", d.name, d.description, model_tag)
+    console.print(table)
+    console.print()
+
+    console.print(f'  [bold]Task:[/bold] "{task}"')
 
     if not auto_approve:
-        print(f"\n  \033[33m⚠  Human approval is ON\033[0m — you will review "
-              f"each action before execution.")
-    print()
+        console.print()
+        console.print("  [yellow]⚠  Human approval is ON[/yellow] — you will review each action before execution.")
+    console.print()
 
     models = _load_models(defs, model_size)
     managed = build_managed_agents(defs, models)
 
     agent_list = ", ".join(f"`{d.name}`" for d in defs)
     coordinator_instructions = (
-        "You are a coordinator that delegates work to specialized agents.\n\n"
-        f"AVAILABLE AGENTS: {agent_list}\n"
-        "You have NO other tools — no web_search, no wikipedia_search, no file access. "
-        "Do NOT call any function not listed above.\n\n"
+        "You delegate tasks to pre-built agents and return their answers.\n\n"
+        f"AGENTS YOU CAN CALL: {agent_list}\n\n"
         "RULES:\n"
-        "1. Call an agent: result = agent_name(task=\"description\")\n"
-        "2. Store the result in a variable, then pass it to the next agent if needed.\n"
-        "3. ALWAYS use `final_answer(result)` inside a <code> block to return your answer.\n"
-        "4. Do NOT write 'Final Answer:' as plain text. It MUST be code: final_answer(result)\n"
-        "5. If an agent already gave you a good answer, just pass it through:\n\n"
-        "Example with one agent:\n"
+        "- Agents are already defined. Just CALL them. Your code should be 2-3 lines.\n"
+        "- NEVER use `def`. NEVER define functions or classes.\n"
+        "- NEVER use `import`. You have no libraries.\n"
+        "- NEVER use `print()`. It does nothing useful.\n"
+        "- NEVER do math or transform the result. Just pass it through.\n"
+        "- ALWAYS end with final_answer(result). Every <code> block MUST have it.\n"
+        "- Call an agent: result = agent_name(task=\"description\")\n\n"
+        "CORRECT:\n"
         "<code>\n"
-        "result = web_researcher(task=\"What is X?\")\n"
+        "result = explainer(task=\"What is binary search?\")\n"
         "final_answer(result)\n"
         "</code>\n\n"
-        "Example chaining two agents:\n"
+        "CORRECT (chaining):\n"
         "<code>\n"
-        "research = web_researcher(task=\"Find info about X\")\n"
-        "summary = summarizer(task=research)\n"
-        "final_answer(summary)\n"
-        "</code>"
+        "info = analyst(task=\"Analyze pros and cons of X\")\n"
+        "result = summarizer(task=info)\n"
+        "final_answer(result)\n"
+        "</code>\n\n"
+        "WRONG — NEVER DO THIS:\n"
+        "- def explainer(task): ...   # WRONG! Never use def!\n"
+        "- import json                # WRONG! Never import!\n"
+        "- print(result)              # WRONG! Never use print!\n"
+        "- result = 34.75 ** 0.36     # WRONG! Never do math on results!\n"
+        "- Final Answer: text         # WRONG! Use final_answer() in code!\n"
     )
 
     coordinator = CodeAgent(
@@ -398,20 +433,12 @@ def run_forge(
 
     result = coordinator.run(task)
 
-    print(f"\n{'═' * W}")
-    print(f"  RESULT")
-    print(f"{'═' * W}\n")
     if result:
-        prefix = " " * 4
-        for line in str(result).splitlines():
-            if line.strip():
-                print(textwrap.fill(
-                    line, width=W, initial_indent=prefix,
-                    subsequent_indent=prefix,
-                ))
-            else:
-                print()
-    print(f"\n{'═' * W}\n")
+        result_panel(str(result))
+    else:
+        console.print()
+        section()
+        console.print()
 
 
 # ---------------------------------------------------------------------------

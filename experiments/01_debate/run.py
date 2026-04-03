@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from mlx_lm.sample_utils import make_sampler
 
+from shared.console import banner, console, print_turn, section, stats_footer
 from shared.models import MODELS, load_model
 
 # ---------------------------------------------------------------------------
@@ -39,16 +40,12 @@ class Turn:
 
 # ---------------------------------------------------------------------------
 # Debater & judge profiles
-#
-# Prompts are short and directive — small models lose the thread fast.
-# The critical constraint ("NEVER argue against/for") goes last because
-# models attend most to the end of the system prompt.
 # ---------------------------------------------------------------------------
 
 DEBATERS = {
     "advocate": {
-        "tag": "\033[32m● Advocate\033[0m",
-        "tag_plain": "Advocate",
+        "name": "Advocate",
+        "style": "green",
         "system": (
             "You argue IN FAVOR of any proposition given to you. "
             "You are optimistic and focus on benefits and opportunities. "
@@ -58,8 +55,8 @@ DEBATERS = {
         "temp": 0.8,
     },
     "critic": {
-        "tag": "\033[31m● Critic\033[0m",
-        "tag_plain": "Critic",
+        "name": "Critic",
+        "style": "red",
         "system": (
             "You argue AGAINST any proposition given to you. "
             "You are skeptical and focus on risks, costs, and weak evidence. "
@@ -71,8 +68,9 @@ DEBATERS = {
 }
 
 JUDGE = {
-    "tag": "\033[33m◆ Judge\033[0m",
-    "tag_plain": "Judge",
+    "name": "Judge",
+    "style": "yellow",
+    "icon": "◆",
     "system": (
         "You are an impartial judge. Read the debate transcript. "
         "State which side won and why in 2-3 sentences. "
@@ -101,7 +99,7 @@ def _clean(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Generation — uses smolagents MLXModel.generate() directly
+# Generation
 # ---------------------------------------------------------------------------
 
 
@@ -119,29 +117,12 @@ def _generate(model, system: str, user_msg: str, temp: float, max_tokens: int):
 
 
 # ---------------------------------------------------------------------------
-# Display
+# Debate engine
 # ---------------------------------------------------------------------------
-
-W = 64
 
 
 def _format_transcript(turns: list[Turn]) -> str:
     return "\n".join(f"[{t.speaker}]\n{t.content.strip()}\n" for t in turns)
-
-
-def _print_turn(tag: str, text: str, elapsed: float):
-    print(f"\n  {tag}  ({elapsed:.1f}s)\n")
-    for line in text.strip().splitlines():
-        print(textwrap.fill(line, width=W, initial_indent="    ", subsequent_indent="    "))
-
-
-# ---------------------------------------------------------------------------
-# Debate engine
-#
-# Each debater only sees the opponent's LAST turn (not the full transcript)
-# to reduce confusion and convergence in small models.
-# The judge sees the full transcript.
-# ---------------------------------------------------------------------------
 
 
 def _last_opponent_turn(turns: list[Turn], current_speaker: str) -> Turn | None:
@@ -164,17 +145,12 @@ def run_debate(
     turns: list[Turn] = []
     t_start = time.perf_counter()
 
-    print(f"\n{'═' * W}")
-    print(f"  ADVERSARIAL DEBATE  —  {rounds} rounds")
-    print(f"  \"{topic}\"")
-    print(f"{'═' * W}")
+    banner(f"ADVERSARIAL DEBATE — {rounds} rounds", subtitle=f'"{topic}"')
 
     order = list(DEBATERS.keys())
 
     for rnd in range(1, rounds + 1):
-        print(f"\n{'─' * W}")
-        print(f"  Round {rnd}/{rounds}")
-        print(f"{'─' * W}")
+        section(f"Round {rnd}/{rounds}")
 
         for key in order:
             d = DEBATERS[key]
@@ -185,7 +161,7 @@ def run_debate(
                     f"Give your opening argument."
                 )
             else:
-                opponent = _last_opponent_turn(turns, d["tag_plain"])
+                opponent = _last_opponent_turn(turns, d["name"])
                 if opponent:
                     user_msg = (
                         f"Proposition: \"{topic}\"\n\n"
@@ -202,15 +178,13 @@ def run_debate(
             text, elapsed = _generate(
                 model, d["system"], user_msg, d["temp"], max_tokens
             )
-            _print_turn(d["tag"], text, elapsed)
-            turns.append(Turn(d["tag_plain"], rnd, text, elapsed))
+            print_turn(d["name"], d["style"], text, elapsed)
+            turns.append(Turn(d["name"], rnd, text, elapsed))
 
     # ------------------------------------------------------------------
-    # Judge verdict — sees the full transcript
+    # Judge verdict
     # ------------------------------------------------------------------
-    print(f"\n{'═' * W}")
-    print(f"  VERDICT")
-    print(f"{'═' * W}")
+    banner("VERDICT")
 
     transcript = _format_transcript(turns)
     judge_msg = (
@@ -221,15 +195,13 @@ def run_debate(
     verdict, v_elapsed = _generate(
         jmodel, JUDGE["system"], judge_msg, JUDGE["temp"], max_tokens_judge
     )
-    _print_turn(JUDGE["tag"], verdict, v_elapsed)
+    print_turn(JUDGE["name"], JUDGE["style"], verdict, v_elapsed, icon=JUDGE["icon"])
 
     total = time.perf_counter() - t_start
     n = len(turns)
     avg = sum(t.elapsed_s for t in turns) / n if n else 0
 
-    print(f"\n{'─' * W}")
-    print(f"  {n} turns  ·  avg {avg:.1f}s/turn  ·  total {total:.1f}s")
-    print(f"{'═' * W}\n")
+    stats_footer(f"{n} turns  ·  avg {avg:.1f}s/turn  ·  total {total:.1f}s")
 
     return turns, verdict
 
@@ -281,12 +253,12 @@ def main():
     )
 
     if args.interactive:
-        print("Interactive debate mode. Type a proposition or 'quit' to exit.\n")
+        console.print("Interactive debate mode. Type a proposition or 'quit' to exit.\n")
         while True:
             try:
                 topic = input("Proposition: ").strip()
             except (KeyboardInterrupt, EOFError):
-                print()
+                console.print()
                 break
             if not topic or topic.lower() in ("quit", "exit", "q"):
                 break
