@@ -8,6 +8,7 @@ from mlx_lm.sample_utils import make_sampler
 
 from .prompts import (
     ACTION_SYSTEM,
+    CHOOSE_TARGET_SYSTEM,
     CITIZEN_SYSTEM,
     EVENT_SYSTEM,
     FAREWELL_HINT,
@@ -18,9 +19,13 @@ from .prompts import (
     OVERNIGHT_GOALS_SYSTEM,
     OVERNIGHT_MEMORY_SYSTEM,
     PREMISE_SYSTEM,
+    SCHEDULE_SYSTEM,
     SUMMARY_SYSTEM,
 )
-from .world import Action, Citizen, DEFAULT_PREMISE, Event, Premise, TimeSlot, EVENT_SEED_POOL
+from .world import (
+    Action, Citizen, DAY_SCHEDULE, DEFAULT_PREMISE,
+    Event, Premise, TimeSlot, EVENT_SEED_POOL,
+)
 
 _STYLES = ["red", "green", "magenta", "yellow", "bright_black", "cyan",
            "blue", "bright_red", "bright_green", "bright_magenta"]
@@ -96,26 +101,86 @@ def _is_repetitive(line: str, transcript: list[tuple[str, str]]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Pair selection
+# Group formation — citizens choose who they want to talk to
 # ---------------------------------------------------------------------------
 
 
-def select_pairs(
-    citizens: list[Citizen], count: int, rng: random.Random,
-) -> list[tuple[Citizen, Citizen]]:
-    """Select random unique pairs for this hour."""
-    pool = list(citizens)
-    rng.shuffle(pool)
-    pairs: list[tuple[Citizen, Citizen]] = []
-    used: set[str] = set()
-    for i in range(0, len(pool) - 1, 2):
-        if len(pairs) >= count:
-            break
-        a, b = pool[i], pool[i + 1]
-        if a.name not in used and b.name not in used:
-            pairs.append((a, b))
-            used.update({a.name, b.name})
-    return pairs
+def _choose_target(model, citizen: Citizen, others: list[Citizen]) -> str:
+    """Ask a citizen who they want to talk to."""
+    others_list = "\n".join(
+        f"- {c.name} ({c.role})" for c in others
+    )
+    rels = ""
+    for c in others:
+        r = citizen.relationships.get(c.name)
+        if r:
+            rels += f"- {c.name}: {r}\n"
+
+    goals_text = format_goals(citizen)
+    recent = _recent_events(citizen)
+
+    prompt = (
+        f"You are {citizen.name} the {citizen.role}.\n"
+        f"Your goals:\n{goals_text}\n"
+        f"Recent events:\n{recent}\n"
+    )
+    if rels:
+        prompt += f"Your relationships:\n{rels}"
+    prompt += (
+        f"\nWho do you want to talk to?\n{others_list}\n\n"
+        f"Write ONLY one name."
+    )
+    raw, _ = generate(model, CHOOSE_TARGET_SYSTEM, prompt, 0.3, 10)
+    chosen = raw.strip().splitlines()[0].strip() if raw.strip() else ""
+    # Match to an actual name
+    for c in others:
+        if c.name.lower() in chosen.lower():
+            return c.name
+    return others[0].name if others else ""
+
+
+def form_groups(
+    model, citizens: list[Citizen], rng: random.Random,
+) -> list[list[Citizen]]:
+    """Each citizen chooses who to talk to; form groups from the choices."""
+    cmap = {c.name: c for c in citizens}
+    choices: dict[str, str] = {}
+
+    for c in citizens:
+        others = [o for o in citizens if o.name != c.name]
+        if others:
+            target = _choose_target(model, c, others)
+            choices[c.name] = target
+
+    # Build groups: if A→B and C→B, they all meet at B
+    assigned: set[str] = set()
+    groups: list[list[Citizen]] = []
+
+    targets_of: dict[str, list[str]] = {}
+    for seeker, target in choices.items():
+        targets_of.setdefault(target, []).append(seeker)
+
+    # Process most-sought people first (they attract groups)
+    popular = sorted(targets_of.items(), key=lambda x: -len(x[1]))
+    for target_name, seekers in popular:
+        group_names = {target_name} | {s for s in seekers}
+        group_names -= assigned
+        if len(group_names) >= 2:
+            group = [cmap[n] for n in group_names if n in cmap]
+            rng.shuffle(group)
+            groups.append(group)
+            assigned.update(group_names)
+
+    # Remaining unassigned: pair them up or let them join existing groups
+    leftover = [c for c in citizens if c.name not in assigned]
+    if len(leftover) >= 2:
+        rng.shuffle(leftover)
+        for i in range(0, len(leftover) - 1, 2):
+            groups.append([leftover[i], leftover[i + 1]])
+    elif len(leftover) == 1 and groups:
+        groups[-1].append(leftover[0])
+
+    return groups
 
 
 # ---------------------------------------------------------------------------
@@ -150,8 +215,7 @@ def update_goals(model, citizen: Citizen, summary: str) -> None:
 
 def run_interaction(
     model,
-    a: Citizen,
-    b: Citizen,
+    group: list[Citizen],
     hour: int,
     slot: TimeSlot,
     max_tokens: int,
@@ -159,8 +223,9 @@ def run_interaction(
     discussed_topics: list[str] | None = None,
     premise: Premise | None = None,
 ) -> Event:
-    """Run a multi-turn conversation between two citizens."""
-    max_turns = 6
+    """Run a multi-turn conversation among N citizens (round-robin)."""
+    n = len(group)
+    max_turns = max(6, n * 2)
     dialogue_tokens = min(max_tokens, 80)
     t0 = time.perf_counter()
 
@@ -174,35 +239,52 @@ def run_interaction(
             + "; ".join(discussed_topics[-6:])
         )
 
-    speakers = [a, b]
+    others_names = lambda s: ", ".join(c.name for c in group if c.name != s.name)
     transcript: list[tuple[str, str]] = []
 
     for turn in range(max_turns):
-        speaker = speakers[turn % 2]
-        listener = speakers[(turn + 1) % 2]
+        speaker = group[turn % n]
+        present = others_names(speaker)
+
+        secret_ctx = (
+            f"\nYour SECRET (protect this at all costs): {speaker.secret}\n"
+            if speaker.secret else ""
+        )
+        rel_lines = []
+        for c in group:
+            if c.name == speaker.name:
+                continue
+            r = speaker.relationships.get(c.name)
+            if r:
+                rel_lines.append(f"- {c.name}: {r}")
+        rel_ctx = f"\nYour history:\n" + "\n".join(rel_lines) + "\n" if rel_lines else ""
 
         system = (
             f"{speaker.personality}\n\n"
+            f"REMEMBER: You ARE {speaker.name}. Never refer to yourself "
+            f"in the third person. The others present are: {present}.\n\n"
             f"You have ${speaker.money} in your pocket.\n"
-            f"Your goals for today:\n{format_goals(speaker)}\n\n"
+            f"Your goals for today:\n{format_goals(speaker)}\n"
+            f"{secret_ctx}{rel_ctx}\n"
             f"{INTERACTION_RULES}"
         )
 
         if turn == 0:
             heard = _recent_events(speaker)
+            who = " and ".join(c.name + " the " + c.role for c in group if c.name != speaker.name)
             user = (
-                f"{time_context} You see {listener.name} the {listener.role}."
+                f"{time_context} You ({speaker.name}) see {who}."
                 f"{news_hint}{avoid_hint}\n"
                 f"Things you've heard today:\n{heard}\n\n"
-                f"What do you say? (1-3 sentences, no narration)"
+                f"Respond as {speaker.name}. (1-3 sentences, no narration)"
             )
         else:
             history = format_transcript(transcript)
-            closing = FAREWELL_HINT if turn >= 3 else ""
+            closing = FAREWELL_HINT if turn >= n * 2 else ""
             user = (
                 f"{time_context}\n"
                 f"Conversation so far:\n{history}\n\n"
-                f"What do you say next? (1-3 sentences, no narration){closing}"
+                f"Respond as {speaker.name}. (1-3 sentences, no narration){closing}"
             )
 
         line, _ = generate(model, system, user, speaker.temp, dialogue_tokens)
@@ -213,18 +295,16 @@ def run_interaction(
 
         transcript.append((speaker.name, line))
 
-        if turn >= 2 and _is_farewell(line):
+        if turn >= n and _is_farewell(line):
             break
 
     conv_text = format_transcript(transcript)
     conversation = f"At {slot.time} near {slot.location}:\n{conv_text}"
     summary, _ = generate(model, SUMMARY_SYSTEM, conversation, 0.3, 80)
 
-    a.memory.append(summary)
-    b.memory.append(summary)
-
-    update_goals(model, a, summary)
-    update_goals(model, b, summary)
+    for c in group:
+        c.memory.append(summary)
+        update_goals(model, c, summary)
 
     elapsed = time.perf_counter() - t0
 
@@ -232,7 +312,7 @@ def run_interaction(
         hour=hour,
         time_label=slot.time,
         location=slot.location,
-        participants=[a.name, b.name],
+        participants=[c.name for c in group],
         transcript=transcript,
         summary=summary,
         elapsed_s=elapsed,
@@ -427,9 +507,16 @@ def generate_event(
 # ---------------------------------------------------------------------------
 
 
-def generate_premise(model) -> Premise:
-    """Generate a unique village setting."""
-    raw, _ = generate(model, PREMISE_SYSTEM, "Create a village setting.", 0.95, 150)
+def generate_premise(model, user_setup: str = "") -> Premise:
+    """Generate a unique village setting, optionally guided by user input."""
+    if user_setup:
+        prompt = (
+            f"The user described this scenario:\n\"{user_setup}\"\n\n"
+            f"Create a village setting that fits this description."
+        )
+    else:
+        prompt = "Create a village setting."
+    raw, _ = generate(model, PREMISE_SYSTEM, prompt, 0.95, 150)
     fields: dict[str, str] = {}
     for line in raw.strip().splitlines():
         if ":" in line:
@@ -451,6 +538,25 @@ def generate_premise(model) -> Premise:
             store=store or f"{village} General Store",
         )
     return DEFAULT_PREMISE
+
+
+def generate_schedule(model, premise: Premise) -> list[TimeSlot]:
+    """Generate locations that fit the premise instead of using hardcoded ones."""
+    prompt = f"Setting: {premise.summary()}\n\nGenerate 10 time slots for this setting."
+    raw, _ = generate(model, SCHEDULE_SYSTEM, prompt, 0.8, 400)
+
+    slots: list[TimeSlot] = []
+    for line in raw.strip().splitlines():
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 4:
+            slots.append(TimeSlot(
+                time=parts[0], period=parts[1],
+                location=parts[2], atmosphere=parts[3],
+            ))
+
+    if len(slots) >= 3:
+        return slots
+    return DAY_SCHEDULE
 
 
 # ---------------------------------------------------------------------------
@@ -481,9 +587,10 @@ def _parse_citizen(raw: str, index: int) -> Citizen | None:
     name = name.split(" the ")[0].strip()
     name = name.split(",")[0].strip()
 
+    secret = fields.get("SECRET", "").strip()
+
     personality = (
-        f"You are {name}, {age}, the village {role.lower()}. {personality_raw} "
-        f"You always speak in first person as yourself."
+        f"You are {name}, {age}, the village {role.lower()}. {personality_raw}"
     )
 
     goals = []
@@ -515,6 +622,7 @@ def _parse_citizen(raw: str, index: int) -> Citizen | None:
         role=role,
         personality=personality,
         goals=goals,
+        secret=secret,
         style=style,
         temp=temp,
         money=money,
@@ -522,12 +630,15 @@ def _parse_citizen(raw: str, index: int) -> Citizen | None:
     )
 
 
-def generate_citizens(model, count: int, premise: Premise | None = None) -> list[Citizen]:
+def generate_citizens(
+    model, count: int, premise: Premise | None = None, user_setup: str = "",
+) -> list[Citizen]:
     """Generate N unique citizens using the model."""
     citizens: list[Citizen] = []
     used_names: set[str] = set()
     used_roles: set[str] = set()
     setting = f"Setting: {premise.summary()}\n\n" if premise else ""
+    constraint = f"User request: \"{user_setup}\"\nFollow this description closely.\n\n" if user_setup else ""
 
     for i in range(count):
         existing = ""
@@ -535,7 +646,7 @@ def generate_citizens(model, count: int, premise: Premise | None = None) -> list
             lines = [f"- {c.name} the {c.role}" for c in citizens]
             existing = f"Existing villagers (do NOT repeat):\n" + "\n".join(lines) + "\n\n"
 
-        prompt = f"{setting}{existing}Create villager #{i + 1} of {count}."
+        prompt = f"{setting}{constraint}{existing}Create villager #{i + 1} of {count}."
         raw, _ = generate(model, CITIZEN_SYSTEM, prompt, 0.9, 200)
         citizen = _parse_citizen(raw, i)
 
@@ -544,7 +655,7 @@ def generate_citizens(model, count: int, premise: Premise | None = None) -> list
             used_roles.add(citizen.role)
             citizens.append(citizen)
         elif i < count + 3:
-            prompt = f"{setting}{existing}Create a COMPLETELY DIFFERENT villager #{i + 1}."
+            prompt = f"{setting}{constraint}{existing}Create a COMPLETELY DIFFERENT villager #{i + 1}."
             raw, _ = generate(model, CITIZEN_SYSTEM, prompt, 0.95, 200)
             citizen = _parse_citizen(raw, i)
             if citizen and citizen.name not in used_names:
@@ -552,4 +663,47 @@ def generate_citizens(model, count: int, premise: Premise | None = None) -> list
                 used_roles.add(citizen.role)
                 citizens.append(citizen)
 
+    if len(citizens) >= 2:
+        _generate_relationships(model, citizens, premise)
+
     return citizens
+
+
+_RELATIONSHIP_SYSTEM = (
+    "You generate relationships between villagers for a drama simulation.\n"
+    "For EACH pair, write exactly one line:\n"
+    "NAME1 -> NAME2: [relationship — e.g. 'owes $50', 'suspects of theft', "
+    "'secret lovers', 'bitter rivals since childhood', 'blackmailing over a secret']\n\n"
+    "RULES:\n"
+    "- At least HALF the relationships must be NEGATIVE (rivalry, debt, suspicion, grudge).\n"
+    "- Be specific and dramatic. No bland friendships.\n"
+    "- Write ONLY the relationship lines. Nothing else."
+)
+
+
+def _generate_relationships(
+    model, citizens: list[Citizen], premise: Premise | None = None,
+) -> None:
+    """Generate relationships between citizens and inject into their knowledge."""
+    names_roles = "\n".join(f"- {c.name}: {c.role}" for c in citizens)
+    setting = f"Setting: {premise.summary()}\n\n" if premise else ""
+    prompt = f"{setting}Villagers:\n{names_roles}\n\nGenerate one relationship per pair."
+    raw, _ = generate(model, _RELATIONSHIP_SYSTEM, prompt, 0.9, 300)
+
+    for line in raw.strip().splitlines():
+        if "->" not in line:
+            continue
+        left, _, right = line.partition("->")
+        name_a = left.strip().split()[0] if left.strip() else ""
+        if ":" in right:
+            name_b_part, _, rel = right.partition(":")
+            name_b = name_b_part.strip().split()[0] if name_b_part.strip() else ""
+            rel = rel.strip()
+        else:
+            continue
+
+        for c in citizens:
+            if c.name == name_a:
+                c.relationships[name_b] = rel
+            elif c.name == name_b:
+                c.relationships[name_a] = rel

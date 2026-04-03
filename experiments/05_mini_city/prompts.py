@@ -3,17 +3,18 @@
 INTERACTION_RULES = (
     "OUTPUT FORMAT: Write ONLY your character's spoken words. Nothing else.\n\n"
     "CORRECT:\n"
-    'Hey Marco, the flour prices are killing me. Did you talk to the supplier?\n\n'
+    'I saw you near the well last night. You better have a good explanation.\n\n'
     "WRONG:\n"
     'You walk up to Marco and say "Hey Marco...". He responds...\n'
     "ALSO WRONG:\n"
     'You\'re at the bakery, and Viktor shows up. He asks if you\'ve seen...\n\n'
     "RULES:\n"
     "- Write ONLY 1-3 short sentences. MAX 40 words.\n"
-    "- Talk about CONCRETE things: work, money, problems, gossip, complaints.\n"
-    "- Try to advance your goals through the conversation.\n"
-    "- You can ask others for help, negotiate, offer deals, lend/borrow money.\n"
-    "- The village has a general store that sells anything for a price.\n"
+    "- Be direct, blunt, emotional. Characters have strong opinions.\n"
+    "- Protect your SECRET — deflect, lie, or change the subject if it comes up.\n"
+    "- Gossip, accuse, confront, demand, threaten, bargain, manipulate.\n"
+    "- Try to advance your goals — even at others' expense.\n"
+    "- If you suspect someone is hiding something, PRESS them.\n"
     "- Do NOT repeat what you already said. Bring up a DIFFERENT topic or goal.\n"
     "- NEVER narrate actions or describe scenes.\n"
     "- NEVER use 'You', 'He', 'She', or 'They' to describe what's happening.\n"
@@ -37,7 +38,8 @@ FAREWELL_WORDS = [
 SUMMARY_SYSTEM = (
     "Summarize this conversation between two villagers in one sentence. "
     "Focus on what happened: agreements, conflicts, news shared, requests made, "
-    "or decisions taken. Be factual and specific. Write ONLY the summary."
+    "or decisions taken. Be factual and specific. Write ONLY the summary. "
+    "Write in English only."
 )
 
 GOAL_UPDATE_SYSTEM = (
@@ -61,7 +63,8 @@ NARRATOR_SYSTEM = (
     "- Note purchases, money spent, goals completed, and work done.\n"
     "- Note any agreements, conflicts, unresolved issues, or changes in plans.\n"
     "- Be direct and concise. No literary flourishes, no metaphors, no atmosphere.\n"
-    "- Use simple past tense. 8-12 sentences max."
+    "- Use simple past tense. 8-12 sentences max.\n"
+    "- Write in English only."
 )
 
 OVERNIGHT_MEMORY_SYSTEM = (
@@ -94,7 +97,8 @@ FINAL_SUMMARY_SYSTEM = (
     "- Which conflicts were resolved and which remain.\n"
     "- How relationships between villagers evolved.\n"
     "- What the village looks like at the end.\n"
-    "Be direct and factual. No literary flourishes."
+    "Be direct and factual. No literary flourishes.\n"
+    "Write in English only."
 )
 
 ACTION_SYSTEM = (
@@ -116,29 +120,33 @@ ACTION_SYSTEM = (
 )
 
 PREMISE_SYSTEM = (
-    "You create a setting for a village simulation.\n"
+    "You create a setting for a dramatic village simulation full of tension.\n"
     "Write EXACTLY in this format, one field per line:\n\n"
     "VILLAGE: [a unique village name]\n"
     "REGION: [geography — e.g. coastal fishing town, mountain valley, desert oasis, "
     "river delta, forest clearing, volcanic island, arctic outpost]\n"
     "ERA: [time period flavor — e.g. 1920s rural, medieval, near-future, "
     "1800s frontier, present-day remote]\n"
-    "MOOD: [one line setting the tone — e.g. 'drought threatens the harvest', "
-    "'a gold rush draws strangers', 'the old mayor just died']\n"
+    "MOOD: [one line describing an URGENT crisis or conflict that divides the village — "
+    "e.g. 'someone was found dead near the well', 'the mine collapse killed three men', "
+    "'a stranger claims to own half the land']\n"
     "STORE: [name of the general store, run by a local character]\n\n"
     "RULES:\n"
+    "- The MOOD must be a crisis that forces villagers to take sides.\n"
     "- Be specific and vivid. No generic fantasy.\n"
-    "- The village must feel like a real, grounded place.\n"
+    "- The village must feel like a real, grounded place under pressure.\n"
     "- Write ONLY the fields above. Nothing else."
 )
 
 CITIZEN_SYSTEM = (
-    "You create ONE villager for a village simulation.\n"
+    "You create ONE villager for a village simulation full of drama and tension.\n"
     "Write EXACTLY in this format, one field per line:\n\n"
     "NAME: [first name]\n"
     "ROLE: [job — e.g. Baker, Doctor, Farmer, Blacksmith, Librarian]\n"
     "AGE: [20-70]\n"
     "PERSONALITY: [2-3 sentences: who they are, how they talk, their flaws]\n"
+    "SECRET: [a hidden fact that would cause trouble if revealed — a past crime, "
+    "a forbidden love, a hidden debt, a stolen identity, a betrayal]\n"
     "GOAL1: [concrete goal with cost if applicable]\n"
     "GOAL2: [concrete goal with cost if applicable]\n"
     "GOAL3: [concrete goal with cost if applicable]\n"
@@ -147,21 +155,54 @@ CITIZEN_SYSTEM = (
     "RULES:\n"
     "- The character must be DIFFERENT from all existing characters listed.\n"
     "- Different name, different role, different personality.\n"
-    "- Personality should include a flaw or quirk.\n"
+    "- Personality should include a flaw or quirk that creates CONFLICT.\n"
+    "- The SECRET must be specific and dangerous if revealed.\n"
     "- Goals must be concrete and actionable (not vague wishes).\n"
+    "- At least one goal should conflict with another villager's interests.\n"
     "- Characters and goals should FIT the village setting described.\n"
     "- Write ONLY the fields above. Nothing else."
 )
 
+SCHEDULE_SYSTEM = (
+    "You generate a list of locations for a village simulation.\n"
+    "Each location must FIT the setting described.\n\n"
+    "Write EXACTLY 10 lines, one per time slot, in this format:\n"
+    "TIME | PERIOD | LOCATION | ATMOSPHERE\n\n"
+    "Example for a desert island:\n"
+    "7:00 AM | Dawn | the beach | Waves lap against the shore as the sun rises.\n"
+    "8:30 AM | Morning | the camp | Smoke rises from last night's fire.\n\n"
+    "Example for a medieval village:\n"
+    "7:00 AM | Dawn | the blacksmith | The forge glows red in the early light.\n"
+    "8:30 AM | Morning | the town square | Merchants set up their carts.\n\n"
+    "RULES:\n"
+    "- Locations must be SPECIFIC to the setting (no bakeries on islands, no beaches in mountains).\n"
+    "- Each location must be DIFFERENT.\n"
+    "- Atmosphere is one vivid sentence.\n"
+    "- Write ONLY the 10 lines. Nothing else."
+)
+
 EVENT_SYSTEM = (
-    "You generate ONE random event for a village simulation.\n"
-    "The event should be a surprise that affects villagers and shakes up their routines.\n\n"
+    "You generate ONE dramatic event for a village simulation.\n"
+    "The event must be DISRUPTIVE — it forces villagers to react, take sides, or panic.\n\n"
+    "GOOD EVENTS (high drama):\n"
+    "- A fire destroys the blacksmith's workshop overnight.\n"
+    "- Someone found blood on the general store floor this morning.\n"
+    "- A stranger arrived claiming the mayor stole his inheritance.\n"
+    "- The well water turned brown — someone may have poisoned it.\n"
+    "- A villager's private letters were found posted on the church door.\n\n"
     "RULES:\n"
     "- Write ONE sentence, max 20 words.\n"
-    "- Be specific and concrete — names, places, objects, dollar amounts.\n"
+    "- The event MUST create conflict, suspicion, fear, or urgency.\n"
+    "- Be specific — name places, objects, dollar amounts.\n"
     "- The event must be NEW — different from previous events listed below.\n"
-    "- It can be good (opportunity, visitor, gift) or bad (accident, theft, storm).\n"
-    "- It should create a situation that villagers will want to discuss and react to.\n"
     "- NEVER repeat a previous event. NEVER be vague or abstract.\n"
     "- Write ONLY the event sentence. Nothing else."
+)
+
+CHOOSE_TARGET_SYSTEM = (
+    "A villager decides who they want to talk to RIGHT NOW.\n"
+    "Based on their goals, secrets, relationships, and recent events, "
+    "they pick the person they MOST need to see.\n\n"
+    "Write ONLY one name from the list. Nothing else.\n"
+    "If they want to be alone, write NOBODY."
 )

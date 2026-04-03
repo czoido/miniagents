@@ -31,9 +31,14 @@ class SimLog:
         for c in citizens:
             inc = f"  (+${c.income}/day)" if c.income else ""
             self._add(f"- **{c.name}** ({c.role}): ${c.money}{inc}")
+            if c.secret:
+                self._add(f"  - *Secret: {c.secret}*")
             if c.goals:
                 for g in c.goals:
                     self._add(f"  - {g}")
+            if c.relationships:
+                for other, rel in c.relationships.items():
+                    self._add(f"  - → {other}: {rel}")
 
     def event(self, text: str) -> None:
         self._add(f"\n> **Breaking News:** {text}\n")

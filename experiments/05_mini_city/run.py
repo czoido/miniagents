@@ -38,18 +38,19 @@ from shared.models import MODELS, load_model
 
 from .engine import (
     day_chronicle,
+    form_groups,
     generate,
     generate_citizens,
     generate_event,
     generate_premise,
+    generate_schedule,
     overnight,
     resolve_daily_actions,
     run_interaction,
-    select_pairs,
 )
 from .log import SimLog
 from .prompts import FINAL_SUMMARY_SYSTEM
-from .world import CITIZENS, DAY_SCHEDULE, Citizen, Event
+from .world import CITIZENS, Citizen, Event
 
 
 # ---------------------------------------------------------------------------
@@ -65,12 +66,13 @@ def run_city(
     max_tokens: int = 150,
     seed: int | None = None,
     num_citizens: int = 5,
+    setup: str = "",
 ):
     rng = random.Random(seed)
 
     # -- Generate world premise --
     section("Generating World")
-    premise = generate_premise(model)
+    premise = generate_premise(model, user_setup=setup)
     console.print(f"  [bold]{premise.village}[/bold]")
     console.print(f"  [dim]{premise.region} · {premise.era}[/dim]")
     console.print(f"  [italic]{premise.mood}[/italic]")
@@ -78,12 +80,12 @@ def run_city(
     console.print()
 
     # -- Generate citizens --
-    num_citizens = max(4, num_citizens)
+    num_citizens = max(2, num_citizens)
     section("Generating Citizens")
     console.print(f"  [dim]Creating {num_citizens} unique villagers...[/dim]")
     console.print()
-    citizens = generate_citizens(model, num_citizens, premise)
-    if len(citizens) < 4:
+    citizens = generate_citizens(model, num_citizens, premise, user_setup=setup)
+    if len(citizens) < 2:
         console.print("  [red]Not enough citizens generated. Using defaults.[/red]")
         citizens = [Citizen(**c.__dict__) for c in CITIZENS]
     else:
@@ -92,10 +94,25 @@ def run_city(
                 f"  [{c.style}]{c.name}[/{c.style}] — {c.role} "
                 f"(${c.money}, +${c.income}/day)"
             )
-            personality_desc = c.personality.split(".", 2)
-            desc = personality_desc[2].strip() if len(personality_desc) > 2 else personality_desc[-1].strip()
+            # Show personality without the "You are X..." prefix
+            parts = c.personality.split(".", 2)
+            desc = parts[2].strip() if len(parts) > 2 else parts[-1].strip()
             console.print(f"    [dim]{desc}[/dim]")
+            if c.secret:
+                console.print(f"    [red dim]Secret: {c.secret}[/red dim]")
         console.print()
+
+        # Show relationships
+        any_rels = any(c.relationships for c in citizens)
+        if any_rels:
+            section("Relationships")
+            for c in citizens:
+                for other, rel in c.relationships.items():
+                    console.print(
+                        f"  [{c.style}]{c.name}[/{c.style}] → {other}: "
+                        f"[dim]{rel}[/dim]"
+                    )
+            console.print()
 
     citizen_map = {c.name: c for c in citizens}
     starting_money = {c.name: c.money for c in citizens}
@@ -106,8 +123,15 @@ def run_city(
     log.premise(premise)
     t_start = time.perf_counter()
 
+    # -- Generate schedule --
+    section("Generating Locations")
+    full_schedule = generate_schedule(model, premise)
+    schedule = full_schedule[:hours]
+    for slot in schedule:
+        console.print(f"  [dim]{slot.time}[/dim]  {slot.location}")
+    console.print()
+
     names = ", ".join(f"[{c.style}]{c.name}[/{c.style}]" for c in citizens)
-    schedule = DAY_SCHEDULE[:hours]
 
     day_label = f"{days} day{'s' if days > 1 else ''}"
     banner(
@@ -153,12 +177,16 @@ def run_city(
             console.print(f"  [dim italic]{slot.atmosphere}[/dim italic]")
             console.print()
 
-            pairs_count = min(2, len(citizens) // 2)
-            pairs = select_pairs(citizens, pairs_count, rng)
+            groups = form_groups(model, citizens, rng)
+            for group in groups:
+                names_str = ", ".join(c.name for c in group)
+                console.print(f"  [dim]→ {names_str} meet up[/dim]")
 
-            for a, b in pairs:
+            console.print()
+
+            for group in groups:
                 event = run_interaction(
-                    model, a, b, h, slot, max_tokens,
+                    model, group, h, slot, max_tokens,
                     day_event=day_event_text,
                     discussed_topics=discussed_topics,
                     premise=premise,
@@ -169,7 +197,7 @@ def run_city(
                 _display_interaction(event, citizen_map)
                 log.interaction(event)
 
-            _spread_gossip(citizens, pairs, day_events, h, rng)
+            _spread_gossip(citizens, groups, day_events, h, rng)
 
         # -- Daily actions --
         section("End of Day — Actions")
@@ -279,26 +307,27 @@ def run_city(
 
 
 def _display_interaction(event: Event, citizen_map: dict[str, Citizen]) -> None:
-    c_a = citizen_map[event.participants[0]]
-    c_b = citizen_map[event.participants[1]]
     turns = len(event.transcript)
-
-    title = Text.assemble(
-        "  ",
-        agent_tag(c_a.name, c_a.style),
-        f" ${c_a.money}",
-        "  ×  ",
-        agent_tag(c_b.name, c_b.style),
-        f" ${c_b.money}",
-        f"  ({turns} turns, {event.elapsed_s:.1f}s)  ",
-    )
+    parts = []
+    for i, name in enumerate(event.participants):
+        c = citizen_map.get(name)
+        if not c:
+            continue
+        if i > 0:
+            parts.append(("  ×  ", ""))
+        parts.append(("  ", ""))
+        parts.append(agent_tag(name, c.style))
+        parts.append((f" ${c.money}", ""))
+    parts.append((f"  ({turns} turns, {event.elapsed_s:.1f}s)  ", ""))
+    title = Text.assemble(*parts)
 
     dialogue = Text()
     for i, (name, line) in enumerate(event.transcript):
-        c = citizen_map[name]
+        c = citizen_map.get(name)
+        style = f"bold {c.style}" if c else "bold"
         if i > 0:
             dialogue.append("\n\n")
-        dialogue.append(f"{name}: ", style=f"bold {c.style}")
+        dialogue.append(f"{name}: ", style=style)
         dialogue.append(line)
 
     console.print(Panel(
@@ -312,14 +341,14 @@ def _display_interaction(event: Event, citizen_map: dict[str, Citizen]) -> None:
 
 def _spread_gossip(
     citizens: list[Citizen],
-    pairs: list[tuple[Citizen, Citizen]],
+    groups: list[list[Citizen]],
     day_events: list[Event],
     hour: int,
     rng: random.Random,
 ) -> None:
     involved: set[str] = set()
-    for a, b in pairs:
-        involved.update({a.name, b.name})
+    for group in groups:
+        involved.update(c.name for c in group)
     hour_summaries = [e.summary for e in day_events if e.hour == hour]
     for c in citizens:
         if c.name not in involved and hour_summaries:
@@ -339,14 +368,18 @@ def main():
         epilog=textwrap.dedent("""\
         examples:
           python -m experiments.05_mini_city.run
-          python -m experiments.05_mini_city.run --citizens 8
-          python -m experiments.05_mini_city.run --citizens 6 --days 3
-          python -m experiments.05_mini_city.run --days 7 --hours 4 --model 8b
+          python -m experiments.05_mini_city.run --setup "3 survivors on a desert island after a shipwreck"
+          python -m experiments.05_mini_city.run --setup "medieval village, 6 characters, a murder mystery"
+          python -m experiments.05_mini_city.run --citizens 8 --days 3
           python -m experiments.05_mini_city.run --seed 42
         """),
     )
     parser.add_argument(
-        "--citizens", type=int, default=5,
+        "--setup", type=str, default=None,
+        help="describe the scenario (characters, setting, situation) — guided generation",
+    )
+    parser.add_argument(
+        "--citizens", type=int, default=None,
         help="number of citizens to generate (default: 5, min: 4)",
     )
     parser.add_argument(
@@ -368,6 +401,31 @@ def main():
     )
     args = parser.parse_args()
 
+    setup = args.setup
+    if setup is None:
+        from rich.prompt import Prompt
+        console.print()
+        setup = Prompt.ask(
+            "  [bold]Describe your scenario[/bold] "
+            "[dim](or press Enter for a random world)[/dim]\n ",
+            default="",
+            console=console,
+        )
+
+    num_citizens = args.citizens
+    if num_citizens is None and setup:
+        import re
+        words = (
+            r"characters|people|survivors|persons|citizens|villagers|"
+            r"men|women|boys|girls|friends|strangers|agents|"
+            r"personajes|personas|supervivientes|hombres|mujeres|amigos|habitantes"
+        )
+        nums = re.findall(rf"(\d+)\s*(?:{words})", setup, re.IGNORECASE)
+        if not nums:
+            nums = re.findall(r"(\d+)\s+\w+", setup)
+        num_citizens = int(nums[0]) if nums else 5
+    num_citizens = num_citizens or 5
+
     model = load_model(args.model)
     run_city(
         model,
@@ -375,7 +433,8 @@ def main():
         hours=args.hours,
         max_tokens=args.max_tokens,
         seed=args.seed,
-        num_citizens=args.citizens or 5,
+        num_citizens=num_citizens,
+        setup=setup,
     )
 
 

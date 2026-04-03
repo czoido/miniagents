@@ -37,7 +37,9 @@ class Citizen:
     temp: float
     money: int = 100
     income: int = 0
+    secret: str = ""
     memory: list[str] = field(default_factory=list)
+    relationships: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
