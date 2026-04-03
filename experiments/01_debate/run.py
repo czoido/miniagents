@@ -257,8 +257,8 @@ def main():
     parser.add_argument(
         "--model",
         choices=MODELS,
-        default="4b",
-        help="model size for debaters (default: 4b)",
+        default="8b",
+        help="model size for debaters (default: 8b)",
     )
     parser.add_argument(
         "--judge-model",

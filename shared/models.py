@@ -9,7 +9,7 @@ MODELS = {
 }
 
 
-def load_model(size: str = "4b") -> MLXModel:
+def load_model(size: str = "8b") -> MLXModel:
     model_id = MODELS[size]
     print(f"  Loading {model_id} ...")
     model = MLXModel(model_id)

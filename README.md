@@ -43,7 +43,7 @@ python -m experiments.01_debate.run --interactive
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `4b` | Model for debaters |
+| `--model` | `8b` | Model for debaters |
 | `--judge-model` | same | Model for the judge |
 | `--rounds` | `3` | Debate rounds |
 | `--max-tokens` | `200` | Tokens per turn |
@@ -64,7 +64,7 @@ python -m experiments.02_hn_digest.run --stories 3 --model 1.7b
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--stories` | `5` | Stories to process |
-| `--model` | `4b` | Model size |
+| `--model` | `8b` | Model size |
 | `--max-article-chars` | `3000` | Max chars extracted per article |
 
 ### 03 — Exquisite Corpse
@@ -85,8 +85,56 @@ python -m experiments.03_exquisite_corpse.run --overlap 1 --model 8b
 | `--seed` | random | Opening sentence |
 | `--turns` | `6` | Number of turns |
 | `--overlap` | `2` | Sentences visible to next agent |
-| `--model` | `4b` | Model size |
+| `--model` | `8b` | Model size |
 | `--max-tokens` | `150` | Tokens per turn |
+
+### 04 — Agent Forge
+
+Dynamic agent discovery from markdown definitions. Agent personalities and
+capabilities are defined as `.md` files in `agents/`. Uses the full smolagents
+`CodeAgent` + `ManagedAgent` pipeline: the coordinator writes Python to call
+sub-agents, but every action requires human approval before execution.
+
+Includes a `web_researcher` agent type that searches the web via DuckDuckGo,
+fetches pages, and synthesizes answers — no browser required.
+
+```bash
+python -m experiments.04_agent_forge.run "Write a poem about the sea"
+python -m experiments.04_agent_forge.run "Analyze the pros and cons of AI"
+python -m experiments.04_agent_forge.run --auto-approve "Quick test"
+python -m experiments.04_agent_forge.run --list
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--agents-dir` | `agents/` | Directory with `.md` agent definitions |
+| `--model` | `8b` | Model size for coordinator |
+| `--auto-approve` | off | Skip human approval (for CI) |
+| `--list` | off | List discovered agents and exit |
+
+Each sub-agent can override the model in its own markdown definition:
+
+```markdown
+---
+name: poet
+description: Writes creative literary prose
+model: 8b
+temp: 0.9
+max_tokens: 300
+---
+
+You are a poet. Write vivid, metaphorical prose...
+```
+
+| Frontmatter field | Default | Description |
+|-------------------|---------|-------------|
+| `name` | filename stem | Agent identifier |
+| `description` | — | What the agent does (shown to coordinator) |
+| `type` | `text` | Agent type: `text` or `web_researcher` |
+| `model` | `8b` | Model size: `8b`, `4b`, or `1.7b` |
+| `temp` | `0.7` | Sampling temperature |
+| `max_tokens` | `300` | Max generation tokens |
+| `max_sources` | `3` | Max pages to fetch (web_researcher only) |
 
 ## Adding experiments
 

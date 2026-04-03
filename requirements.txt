@@ -3,4 +3,7 @@ huggingface-hub
 smolagents
 pyyaml
 httpx
+ddgs
+markdownify
+requests
 mlx @ git+https://github.com/PrismML-Eng/mlx.git@prism

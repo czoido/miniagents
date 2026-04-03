@@ -77,3 +77,10 @@ jobs:
           .venv-ci/bin/python -m experiments.03_exquisite_corpse.run
           --turns 4
           --model ${{ matrix.model }}
+
+      - name: Run agent forge (${{ matrix.model }})
+        run: >
+          .venv-ci/bin/python -m experiments.04_agent_forge.run
+          --auto-approve
+          "Explain what a binary search algorithm is and list its pros and cons"
+          --model ${{ matrix.model }}
