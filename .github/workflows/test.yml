@@ -81,7 +81,9 @@ jobs:
       - name: Run mini city (${{ matrix.model }})
         run: >
           .venv-ci/bin/python -m experiments.05_mini_city.run
-          --hours 3
+          --setup ""
+          --hours 2
+          --citizens 6
           --model ${{ matrix.model }}
 
       - name: Run agent forge (${{ matrix.model }})
